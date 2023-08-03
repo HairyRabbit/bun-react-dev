@@ -1,0 +1,8 @@
+{
+  "name": "bun-react-dev",
+  "version": "0.0.1",
+  "devDependencies": {
+    "bun-types": "^0.7.1",
+    "typescript": "^5.1.6"
+  }
+}
