@@ -1,4 +1,4 @@
-function create_server() {
+export function create_server() {
   const server = Bun.serve({
     fetch() {
       return new Response("File not found", {
