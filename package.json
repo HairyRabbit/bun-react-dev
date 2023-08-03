@@ -4,8 +4,5 @@
   "devDependencies": {
     "bun-types": "^0.7.1",
     "typescript": "^5.1.6"
-  },
-  "dependencies": {
-    "bun-react-dev": "github:HairyRabbit/bun-react-dev"
   }
 }
