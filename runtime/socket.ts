@@ -1,6 +1,6 @@
 /// <reference types="web" />
 
-export const socket = new WebSocket('ws://localhost:3000/hmr')
+export const socket = new WebSocket('ws://localhost:3000/__DEV__')
 
 const msg_queue: string[] = []
 
@@ -25,4 +25,4 @@ export function send(data: unknown) {
   }
 }
 
-window.__DEV_SOCKET__ = socket
+globalThis.__DEV_SOCKET__ = socket

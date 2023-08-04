@@ -100,7 +100,8 @@ function is_dynamic_import_call(node: ts.Node): node is ts.CallExpression {
 }
 
 function override_specifier(filename: string, root: string, specifer: string) {
-  const filepath = path.isAbsolute(filename) ? path.resolve(root, filename) : filename
+  const filepath = path.isAbsolute(filename) ? filename : path.resolve(root, filename)
   const resolved = import.meta.resolveSync(specifer, filepath)
+  console.log(filepath, resolved)
   return '/' + path.relative(root, resolved)
 }

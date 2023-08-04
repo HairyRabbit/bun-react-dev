@@ -34,11 +34,42 @@ export type ServerOptions = {
 }
 
 export function create_server(options: ServerOptions) {
+  const watcher = fs.watch(options.path.root)
+  const cache: Map<string, string> = new Map
+  watcher.addListener('change', (type, filename) => {
+    console.log(type, filename)
+    const runtime_filepath = '/' + filename
+    if('change' === type) {
+      server.publish('hmr', JSON.stringify({
+        type: 'update',
+        payload: {
+          url: runtime_filepath
+        }
+      }))
+    }
+  })
+
   const server = Bun.serve({
+    websocket: {
+      open: (ws) => {
+        console.log("Client connected");
+        // console.log(ws)
+        // ws.send('ok')
+        ws.subscribe('hmr')
+  
+      },
+      message: (ws, message) => {
+        console.log("Client sent message", message);
+      },
+      close: (ws) => {
+        console.log("Client disconnected");
+        ws.unsubscribe('hmr')
+      },
+    },
     fetch(request, server) {
       const pathname = new URL(request.url).pathname
       
-      if (pathname.endsWith('/__dev__')) {
+      if (pathname.endsWith('/__DEV__')) {
         if (server.upgrade(request)) {
           return new Response("", {
             status: 101
@@ -72,9 +103,10 @@ export function create_server(options: ServerOptions) {
         case '.js': 
         case '.jsx': {
           const content = fs.readFileSync(filepath, 'utf-8')
-          const result = transform_js(content, options.path.root)
+          const result = transform_js(content, options.path.root, pathname.replace(/^\//, ''))
           const outpath = path.resolve(options.path.output, pathname.replace(/^\//, '').replace(ext, '.js'))
           fs.writeFileSync(outpath, result)
+          cache.set(filepath, result)
           return new Response(Bun.file(outpath))
         }
         default: {

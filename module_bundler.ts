@@ -2,6 +2,8 @@ import * as fs from 'fs'
 import * as path from 'path'
 import { tmpdir } from 'os'
 import type { Transpiler } from 'bun'
+import * as ts from 'typescript'
+import { typescript_transform_import_specifier } from './transformer/import'
 
 export type BundleModuleOptions = {
   force?: boolean
@@ -11,18 +13,26 @@ const DefaultBundleModuleOptions: Required<BundleModuleOptions> = {
   force: false
 }
 
-export async function bundle_module(name: string, output: string, root: string, options: BundleModuleOptions = {}) {
+export async function bundle_module(
+  name: string,
+  output: string,
+  root: string,
+  options: BundleModuleOptions = {}
+) {
   const opt = { ...DefaultBundleModuleOptions, options }
 
-  if(false === opt.force) {
+  if (false === opt.force) {
     const target_path = path.resolve(output, name + '.js')
-    if(fs.existsSync(target_path)) return target_path
+    if (fs.existsSync(target_path)) return target_path
   }
 
   const resolved = await import.meta.resolve(name, root)
-  const transpier = new Bun.Transpiler()
-  
+  const transpier = new Bun.Transpiler({
+    loader: 'tsx'
+  })
+
   const dependencies = [...get_dependencies(new Set, transpier, resolved)]
+  console.log(resolved, dependencies)  
 
   const workdir = tmpdir()
 
@@ -30,16 +40,16 @@ export async function bundle_module(name: string, output: string, root: string, 
     entrypoints: [resolved],
     target: 'browser',
     outdir: workdir,
-    // outdir: './build',
     naming: name + '.js',
     format: 'esm',
     external: dependencies,
   })
 
-  console.log(result1)
-  console.log(transpier.scan(fs.readFileSync(result1.outputs[0].path)))
+  // console.log(result1)
+  // console.log(transpier.scan(fs.readFileSync(result1.outputs[0].path)))
 
   const { default: _, ...mod } = await import(resolved)
+  // console.log('export:', resolved, _, mod)
   const wrapper_path = path.resolve(workdir, name + '.shell.js')
   const module_build_path = './' + path.basename(result1.outputs[0].path)
   // console.log(module_build_path)
@@ -60,8 +70,20 @@ export async function bundle_module(name: string, output: string, root: string, 
     external: dependencies,
   })
 
-  console.log(result)
-
+  const content = fs.readFileSync(result.outputs[0].path, 'utf-8')
+  const override_result = ts.transpileModule(content, {
+    fileName: result.outputs[0].path,
+    compilerOptions: {
+      module: ts.ModuleKind.ESNext,
+    },
+    transformers: {
+      after: [
+        typescript_transform_import_specifier(''),
+      ]
+    }
+  })
+  fs.writeFileSync(result.outputs[0].path, override_result.outputText)
+  // console.log(result)
 
   await Promise.all(dependencies.map(dep => bundle_module(dep, output, root, options)))
 
@@ -76,9 +98,11 @@ function get_dependencies(dependencies: Set<string>, transpiler: Transpiler, fil
   const imports = transpiler.scanImports(code)
 
   imports.forEach(({ path: import_path }) => {
-    if(import_path.startsWith('.')) {
-      const absolute_path = path.resolve(path.dirname(filepath), import_path)
-      get_dependencies(dependencies, transpiler, absolute_path)
+    if (import_path.startsWith('.')) {
+      // const absoluted = path.resolve(path.dirname(filepath), import_path)
+      const resolved = import.meta.resolveSync(import_path, filepath)
+      console.log(filepath, resolved)
+      get_dependencies(dependencies, transpiler, resolved)
     }
     else {
       dependencies.add(import_path)

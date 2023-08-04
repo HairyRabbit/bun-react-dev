@@ -1,5 +1,3 @@
-/// <reference types="web" />
-
 import { injectIntoGlobalHook } from 'react-refresh/runtime'
 
 declare global {
@@ -7,6 +5,6 @@ declare global {
   function $RefreshSig$(): <T>(type: T) => T
 }
 
-injectIntoGlobalHook(window)
+injectIntoGlobalHook(globalThis as unknown as Window)
 globalThis.$RefreshReg$ = () => { };
 globalThis.$RefreshSig$ = () => (type) => type;

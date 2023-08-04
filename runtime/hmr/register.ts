@@ -18,4 +18,4 @@ export function register(url: string) {
   return created_module
 }
 
-window.__DEV_HMR_REGISTER__ = register
+globalThis.__DEV_HMR_REGISTER__ = register
