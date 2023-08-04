@@ -54,10 +54,11 @@ export function create_server(options: ServerOptions) {
 
 
       if(pathname.startsWith('/[module]/')) {
-        return serve_module(options.path.module, pathname.replace(/^\/\[module\]\//, ''))
+        const module_name = pathname.replace(/^\/\[module\]\//, '')
+        return serve_module(module_name, options.path.module, options.path.root)
       }
 
-      const filepath = path.resolve(options.path.root, pathname)
+      const filepath = path.resolve(options.path.root, pathname.replace(/^\//, ''))
       if(false === fs.existsSync(filepath)) {
         return new Response("File not found", {
           status: 404,
@@ -72,8 +73,9 @@ export function create_server(options: ServerOptions) {
         case '.jsx': {
           const content = fs.readFileSync(filepath, 'utf-8')
           const result = transform_js(content, options.path.root)
-
-          return new Response(result)
+          const outpath = path.resolve(options.path.output, pathname.replace(/^\//, '').replace(ext, '.js'))
+          fs.writeFileSync(outpath, result)
+          return new Response(Bun.file(outpath))
         }
         default: {
           // raw-loader
@@ -86,7 +88,7 @@ export function create_server(options: ServerOptions) {
   return server
 }
 
-async function serve_module(module_name: string, module_dir: string, ) {
-  const output = await bundle_module(module_name, module_dir)
+async function serve_module(module_name: string, module_dir: string, root: string) {
+  const output = await bundle_module(module_name, module_dir, root)
   return new Response(Bun.file(output))
 }

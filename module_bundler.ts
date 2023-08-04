@@ -11,7 +11,7 @@ const DefaultBundleModuleOptions: Required<BundleModuleOptions> = {
   force: false
 }
 
-export async function bundle_module(name: string, output: string, options: BundleModuleOptions = {}) {
+export async function bundle_module(name: string, output: string, root: string, options: BundleModuleOptions = {}) {
   const opt = { ...DefaultBundleModuleOptions, options }
 
   if(false === opt.force) {
@@ -19,7 +19,7 @@ export async function bundle_module(name: string, output: string, options: Bundl
     if(fs.existsSync(target_path)) return target_path
   }
 
-  const resolved = await import.meta.resolve(name)
+  const resolved = await import.meta.resolve(name, root)
   const transpier = new Bun.Transpiler()
   
   const dependencies = [...get_dependencies(new Set, transpier, resolved)]
@@ -63,7 +63,7 @@ export async function bundle_module(name: string, output: string, options: Bundl
   console.log(result)
 
 
-  await Promise.all(dependencies.map(dep => bundle_module(dep, output, options)))
+  await Promise.all(dependencies.map(dep => bundle_module(dep, output, root, options)))
 
   return result.outputs[0].path
 }

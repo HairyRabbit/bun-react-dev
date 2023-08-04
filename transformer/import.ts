@@ -46,9 +46,8 @@ export function typescript_transform_import_specifier(
             override = override_specifier(filename, root, specifier)
           }
           else {
-            override = opt.module + '/' + specifier
+            override = opt.module + specifier
           }
-          console.log('transform', `override => ${override}`)
 
           if (override !== specifier) {
             if (ts.isImportDeclaration(node)) {
@@ -103,8 +102,5 @@ function is_dynamic_import_call(node: ts.Node): node is ts.CallExpression {
 function override_specifier(filename: string, root: string, specifer: string) {
   const filepath = path.isAbsolute(filename) ? path.resolve(root, filename) : filename
   const resolved = import.meta.resolveSync(specifer, filepath)
-
-  // const resolve_file_path = path.resolve(path.dirname(filename), specifier + '.js')
-  // override = '/' + path.relative(SOURCE_DIR, resolve_file_path)
   return '/' + path.relative(root, resolved)
 }
