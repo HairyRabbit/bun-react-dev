@@ -5,7 +5,6 @@ export function transform_js(content: string, root: string) {
   const result = ts.transpileModule(content, {
     compilerOptions: {
       module: ts.ModuleKind.ESNext,
-      jsx: ts.JsxEmit.ReactJSXDev,
     },
     transformers: {
       after: [
