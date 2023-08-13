@@ -32,11 +32,11 @@ export async function bundle_module(
   })
 
   const dependencies = [...get_dependencies(new Set, transpier, resolved)]
-  console.log(resolved, dependencies)  
+  console.log(resolved, dependencies)
 
   const workdir = tmpdir()
 
-  const result1 = await Bun.build({
+  let result = await Bun.build({
     entrypoints: [resolved],
     target: 'browser',
     outdir: workdir,
@@ -48,32 +48,37 @@ export async function bundle_module(
   // console.log(result1)
   // console.log(transpier.scan(fs.readFileSync(result1.outputs[0].path)))
 
-  const { default: _, ...mod } = await import(resolved)
-  // console.log('export:', resolved, _, mod)
-  const wrapper_path = path.resolve(workdir, name + '.shell.js')
-  const module_build_path = './' + path.basename(result1.outputs[0].path)
-  // console.log(module_build_path)
+  console.log('err', resolved)
+  const { default: default_export, ...mod } = await import(resolved)
 
-  const shell = `\
+  if (default_export) {
+    console.log('export:', resolved, default_export, mod)
+    const wrapper_path = path.resolve(workdir, name + '.shell.js')
+    const module_build_path = './' + path.basename(result.outputs[0].path)
+    // console.log(module_build_path)
+
+    const shell = `\
   import __default__ from "${module_build_path}";
   export const {${Object.keys(mod).join(',')}} = __default__;
   export default __default__
   `
-  fs.writeFileSync(wrapper_path, shell)
+    fs.writeFileSync(wrapper_path, shell)
 
-  const result = await Bun.build({
-    entrypoints: [wrapper_path],
-    target: 'browser',
-    outdir: output,
-    naming: name + '.js',
-    format: 'esm',
-    external: dependencies,
-  })
+    result = await Bun.build({
+      entrypoints: [wrapper_path],
+      target: 'browser',
+      outdir: output,
+      naming: name + '.js',
+      format: 'esm',
+      external: dependencies,
+    })
+  }
 
   const content = fs.readFileSync(result.outputs[0].path, 'utf-8')
   const override_result = ts.transpileModule(content, {
     fileName: result.outputs[0].path,
     compilerOptions: {
+      target: ts.ScriptTarget.ESNext,
       module: ts.ModuleKind.ESNext,
     },
     transformers: {

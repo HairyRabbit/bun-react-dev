@@ -56,7 +56,7 @@ export function typescript_transform_import_specifier(
                 node.modifiers,
                 node.importClause,
                 context.factory.createStringLiteral(override),
-                undefined,
+                node.assertClause,
               )
             }
             else if (ts.isExportDeclaration(node)) {
@@ -66,7 +66,7 @@ export function typescript_transform_import_specifier(
                 node.isTypeOnly,
                 node.exportClause,
                 context.factory.createStringLiteral(override),
-                undefined,
+                node.assertClause,
               )
             }
             else if (ts.isCallExpression(node)) {

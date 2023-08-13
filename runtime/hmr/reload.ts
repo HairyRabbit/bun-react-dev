@@ -1,3 +1,4 @@
 export function reload() {
-  window.location.reload()
+  globalThis.location.reload()
+  console.clear()
 }
