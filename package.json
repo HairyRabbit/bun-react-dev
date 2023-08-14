@@ -7,6 +7,8 @@
   },
   "devDependencies": {
     "@types/node": "^20.4.6",
+    "@types/react": "^18.2.20",
+    "@types/react-dom": "^18.2.7",
     "@types/react-refresh": "^0.14.0",
     "@types/web": "^0.0.112",
     "bun-types": "^0.7.1",
