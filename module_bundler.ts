@@ -3,7 +3,7 @@ import * as path from 'path'
 import { tmpdir } from 'os'
 import type { Transpiler } from 'bun'
 import * as ts from 'typescript'
-import { typescript_transform_import_specifier } from './transformer/import'
+import { typescript_transform_import_specifier } from './parser/import'
 
 export type BundleModuleOptions = {
   force?: boolean

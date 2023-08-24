@@ -1,6 +1,6 @@
 import * as ts from 'typescript'
-import { typescript_transform_import_specifier } from '../transformer/import'
-import { typescript_inject_hmr } from '../transformer/hmr-injection'
+import { typescript_transform_import_specifier } from '../parser/import'
+import { typescript_inject_hmr } from '../parser/hmr-injection'
 import transform_react_refresh from 'react-refresh-typescript'
 
 export function transform_js(content: string, root: string, filename: string) {
