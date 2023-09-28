@@ -1,13 +1,14 @@
 import * as fs from 'fs'
 import * as path from 'path'
-import { bundle_module } from './module_bundler';
+import { bundle_module } from './package_bundler';
 import { transform_js } from './transformer/js';
-import { transform_css } from './transformer/css';
 import { render_html } from './html';
 import { generate_boot_code } from './boot';
 import { write_file } from './file';
 import { BunFile } from 'bun';
 import { watch } from 'chokidar'
+import { ModuleFile, ModuleMap, get_replacement_modules } from './module_manager';
+import { create_transform_factory } from './transformer';
 
 function serveFromDir(config: {
   directory: string;
@@ -54,27 +55,62 @@ export function create_server(project_path: string, options: ServerOptions) {
   const source_dirpath = resolve_dirpath(options.srcdir, project_path, DEFAULT_SRCDIR)
   const output_dirpath = resolve_dirpath(options.outdir, project_path, DEFAULT_OUTDIR)
 
+  const module_map: ModuleMap = new Map
+
   const cache: Map<string, BunFile> = new Map
+  const depmap: Map<string, string> = new Map
   // fs.existsSync(output_dirpath) && sync_cache(cache, output_dirpath)
 
-  const watcher = watch(source_dirpath, {
-    alwaysStat: true,
-  })
+  const watcher = watch(source_dirpath, { alwaysStat: true })
+  const transform = create_transform_factory(module_map, source_dirpath)
 
   watcher.on('change', (filepath, stat) => {
     console.log('file change:', filepath)
-    const relative_path = path.relative(source_dirpath, filepath)
-    const output_path = path.join(relative_path, relative_path)
-    cache.set(output_path, Bun.file(output_path))
+    const url = Bun.pathToFileURL(filepath)
+    
+    const module_file = module_map.get(url.toString())
+    if(!module_file) return
+
+    console.log('file module:', module_file)
+
+    if(module_file.replacement) {
+      const relative_path = path.relative(source_dirpath, filepath)
+      const runtime_filepath = '/' + relative_path
+      server.publish('hmr', JSON.stringify({
+        type: 'update',
+        payload: {
+          url: runtime_filepath
+        }
+      }))
+    }
+    else {
+      const dependents = get_replacement_modules(module_map, module_file)
+      dependents.forEach(dependent_module => {
+        const relative_path = path.relative(source_dirpath, dependent_module.url.pathname)
+        const runtime_filepath = '/' + relative_path
+        server.publish('hmr', JSON.stringify({
+          type: 'update',
+          payload: {
+            url: runtime_filepath
+          }
+        }))
+      })
+    }
 
 
-    const runtime_filepath = '/' + relative_path
-    server.publish('hmr', JSON.stringify({
-      type: 'update',
-      payload: {
-        url: runtime_filepath
-      }
-    }))
+
+    // const bubbled_path = module_map.get(url.toString()) ?? filepath
+    // const relative_path = path.relative(source_dirpath, bubbled_path)
+    // // const output_path = path.join(relative_path, relative_path)
+    // // cache.set(output_path, Bun.file(output_path))
+
+    // const runtime_filepath = '/' + relative_path
+    // server.publish('hmr', JSON.stringify({
+    //   type: 'update',
+    //   payload: {
+    //     url: runtime_filepath
+    //   }
+    // }))
   }).on('add', (filepath, stat) => {
     const relative_path = path.relative(source_dirpath, filepath)
 
@@ -172,6 +208,7 @@ export function create_server(project_path: string, options: ServerOptions) {
         directory: options.path.public,
         path: pathname === '/' ? '/index.html' : pathname,
       })
+
       if (publicResponse) {
         if (pathname === '/') {
           const resp = html_rewrite.transform(
@@ -199,15 +236,16 @@ export function create_server(project_path: string, options: ServerOptions) {
         return serve_module(module_name, options.path.module, options.path.root)
       }
 
-      const filepath = pathname.replace(/^\//, '')
-      const source_file = Bun.file(path.join(source_dirpath, filepath))
-      const is_exists = await source_file.exists()
+      const basename = pathname.replace(/^\//, '')
+      const filepath = path.join(source_dirpath, basename)
+      const url = new URL(filepath, 'file:')
+      const is_exists = fs.existsSync(url.pathname)
       if (false === is_exists) return new Response(null, {
         status: 404,
       })
 
-      const transformed = await transform_file(source_file, source_dirpath)
-      const output_path = path.join(output_dirpath, filepath)
+      const transformed = await transform(url)
+      const output_path = path.join(output_dirpath, basename)
       const output_file = await write_file(Bun.file(output_path), transformed)
       return new Response(output_file, {
         headers: {
@@ -238,6 +276,7 @@ export function create_server(project_path: string, options: ServerOptions) {
 
 async function serve_module(module_name: string, module_dir: string, root: string) {
   const output = await bundle_module(module_name, module_dir, root)
+  if(null === output) return new Response(null, { status: 404 })
   return new Response(Bun.file(output))
 }
 
@@ -257,25 +296,4 @@ function sync_cache(cache: Map<string, BunFile>, dirpath: string) {
 
     cache.set(target_path, Bun.file(target_path))
   })
-}
-
-
-async function transform_file(file: BunFile, root: string) {
-  const source_path = file.name
-  if(!source_path) throw new Error('No file path found')
-  const extname = path.extname(source_path)
-
-  const content = await file.text()
-
-  switch (extname) {
-    case '.ts':
-    case '.tsx':
-    case '.js':
-    case '.jsx': return transform_js(content, root, source_path)
-
-    case '.scss':
-    case '.css': return transform_css(content, root, source_path)
-
-    default: return content
-  }
 }

@@ -1,0 +1,6 @@
+// @use "normalize";
+@use "./bar" as bar;
+
+.test { 
+  color: bar.$color; 
+}

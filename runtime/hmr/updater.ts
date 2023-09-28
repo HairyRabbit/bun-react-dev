@@ -1,21 +1,21 @@
 import { context } from './context'
 
 export async function update(id: string) {
-  const state = context.module.get(id)
-  console.log(state)
+  const mod = context.module.get(id)
+  console.log(mod)
 
-  if (!state) {
+  if (!mod) {
     return false;
   }
-  if (state.is_declined) {
+  if (mod.is_declined) {
     return false;
   }
 
-  const accepts = state.accept_handlers
-  const disposes = state.dispose_handlers
+  const accepts = mod.accept_handlers
+  const disposes = mod.dispose_handlers
   
-  state.dispose_handlers = []
-  state.data = {}
+  mod.dispose_handlers = []
+  mod.data = {}
 
   disposes.map((callback) => callback())
   

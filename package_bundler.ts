@@ -4,6 +4,7 @@ import { tmpdir } from 'os'
 import type { Transpiler } from 'bun'
 import * as ts from 'typescript'
 import { typescript_transform_import_specifier } from './parser/import'
+import { resolve_filepath } from './file'
 
 export type BundleModuleOptions = {
   force?: boolean
@@ -26,7 +27,9 @@ export async function bundle_module(
     if (fs.existsSync(target_path)) return target_path
   }
 
-  const resolved = await import.meta.resolve(name, root)
+  const resolved = resolve_filepath(name, root)
+  if(null === resolved) return null
+
   const transpier = new Bun.Transpiler({
     loader: 'tsx'
   })

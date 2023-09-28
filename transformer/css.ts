@@ -1,33 +1,70 @@
 import * as ts from 'typescript'
 import * as lightningcss from 'lightningcss'
-import * as sass from 'sass'
+import { RawSourceMap } from 'source-map-js'
+import { make_inline_sourcemap } from '../sourcemap'
+import { BunFile } from 'bun'
 
-// sass.compile()
+export async function transform_css_file(file: BunFile) {
+  const code = await file.arrayBuffer()
 
-export function transform_css(content: string, root: string, filename: string) {
-  const transformed = lightningcss.transform({
-    filename,
+  const result = lightningcss.transform({
+    filename: file.toString(),
+    cssModules: true,
+    code: Buffer.from(code),
+    sourceMap: true,
+  })
+
+  const filepath = file.name!
+
+  return { 
+    ...result, 
+    sourcemap: override_sourcemap(result.map!, filepath),
+    css_exports: create_classnames_map(result.exports),
+  }
+}
+
+export function transform_css_content(content: string, filepath: string) {
+  const result = lightningcss.transform({
+    filename: filepath,
     cssModules: true,
     code: Buffer.from(content),
     sourceMap: true,
   })
-  // console.log(transformed)
-  const css_exports = []
-  if(transformed.exports) {
-    for (const name in transformed.exports) {
-      if(transformed.exports[name]) {
-        css_exports.push({
-          name,
-          value: transformed.exports[name].name
-        })
+
+  return { 
+    ...result, 
+    sourcemap: override_sourcemap(result.map!, filepath),
+    css_exports: create_classnames_map(result.exports),
+  }
+}
+
+function override_sourcemap(map: Buffer, filepath: string) {
+  const sourcemap = JSON.parse(map!.toString()) as RawSourceMap
+  sourcemap.file = filepath
+  return sourcemap
+}
+
+function create_classnames_map(css_exports: lightningcss.TransformResult['exports']) {
+  const map: Map<string, string> = new Map
+  if (css_exports) {
+    for (const name in css_exports) {
+      if (css_exports[name]) {
+        map.set(name, css_exports[name].name)
       }
     }
   }
-  // console.log(css_exports)
-  const sourcemap = '/*# sourceMappingURL=data:application/json;base64,' + transformed.map?.toString('base64') + ' */'
+  return map
+}
+
+export function generate_style_code(code: string, exports: Map<string, string>, sourcemap: RawSourceMap) {
+  const exports_str: string[] = []
+  exports.forEach((transformed, classname) => {
+    exports_str.push(`${classname}:"${transformed}"`)
+  })
+
   const gen = `
 if(globalThis.__REACT_DEV__) import.meta.hot = globalThis.__REACT_DEV__.hmr.register(import.meta.url)
-const content = \`\\\n${transformed.code}\n${sourcemap}\`
+const content = \`\\\n${code}\n${make_inline_sourcemap(sourcemap)}\`
 const id = new URL(import.meta.url).pathname
 
 const stylesheet = document.createElement('style')
@@ -44,28 +81,17 @@ if(import.meta.hot) {
   })
 }
 
-export default {${css_exports.map(item => `${item.name}:"${item.value}"`).join(',')};
+export default {${exports_str.join(',')};
+`
 
-  `
   const result = ts.transpileModule(gen, {
-    fileName: filename,
     compilerOptions: {
       target: ts.ScriptTarget.ESNext,
       module: ts.ModuleKind.ESNext,
     },
     transformers: {
-      before: [
-        // typescript_transform_import_specifier(root),
-        // transform_react_refresh({
-          // refreshReg: 'globalThis.$RefreshReg$',
-          // refreshSig: 'globalThis.$RefreshSig$',
-          // emitFullSignatures: true
-        // }),
-        // typescript_inject_hmr()
-      ],
-      after: [
-        
-      ]
+      before: [],
+      after: []
     }
   })
 
