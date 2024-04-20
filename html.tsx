@@ -7,24 +7,26 @@ type ContainerOptions<T extends HTMLElement> = {
   readonly attributes?: Omit<HTMLAttributes<T>, 'id'>
 }
 
-type HTMLProps<T extends HTMLElement> = {
+type HTMLProps<T extends HTMLElement = HTMLDivElement> = {
   readonly container?: null | boolean | string | ContainerOptions<T>
+  readonly viewport?: null | boolean | string
 }
 
 export const HTML = function <T extends HTMLElement>(props: HTMLProps<T>): ReactNode {
   const container_options = make_container_options(props.container)
+  const viewport_options = parse_viewport_options(props.viewport)
 
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
-        <link rel="icon" href="favicon.ico" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <link rel="icon" type="image/svg+xml" href="/logo.svg" />
+        {viewport_options && <meta name="viewport" content={viewport_options} />}
         <meta name="theme-color" content="#000000" />
         <meta name="description" content="serve by react-dev" />
         {/* <link rel="manifest" href="/manifest.json" /> */}
         <title>React App</title>
-        <meta name="react-dev" content="" />
+        {/* <link rel="stylesheet" href="/global.css" /> */}
       </head>
       <body>
         <noscript>You need to enable JavaScript to run this app.</noscript>
@@ -35,7 +37,7 @@ export const HTML = function <T extends HTMLElement>(props: HTMLProps<T>): React
             id: container_options.id, 
           }
         )}
-        <script src="/boot.tsx" type="module"></script>
+        <script src="/[boot]" type="module"></script>
       </body>
     </html>
   )
@@ -43,7 +45,6 @@ export const HTML = function <T extends HTMLElement>(props: HTMLProps<T>): React
 
 export const DEFAULT_CONTAINER_ID = 'root'
 export const DEFAULT_CONTAINER_TAGNAME = 'div'
-
 export function make_container_options<T extends HTMLElement>(options: HTMLProps<T>['container']) {
   if (false === options) return null
   if (true === options || null === options || undefined === options) return {
@@ -73,4 +74,11 @@ export function make_container_options<T extends HTMLElement>(options: HTMLProps
 
 export function render_html<T extends HTMLElement>(props: HTMLProps<T> = {}) {
   return renderToString(<HTML {...props} />)
+}
+
+export const DEFAULT_VIEWPORT_VALUE ='width=device-width, initial-scale=1'
+function parse_viewport_options(viewport: HTMLProps['viewport']) {
+  if(null === viewport || undefined === viewport || false === viewport) return null
+  if(true === viewport) return DEFAULT_VIEWPORT_VALUE
+  return viewport
 }

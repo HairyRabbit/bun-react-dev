@@ -9,6 +9,6 @@ test('file type', async () => {
 
 test('url path', async () => {
   const url = new URL('/foo.tsx?bar=42', 'file:')
-  const bun_url = path.resolve('/foo.tsx?bar=42')
+  const bun_url = Bun.pathToFileURL('/foo.tsx?bar=42')
   console.log(bun_url)
 })

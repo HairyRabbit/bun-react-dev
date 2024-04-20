@@ -1,13 +1,12 @@
 import * as  path from 'path'
 import * as fs from 'fs'
 import * as sass from 'sass'
-import { ModuleFile, ModuleMap, create_module, update_module } from '../module_manager'
-import { BunFile } from 'bun'
+import { ModuleFile, ModuleType, create_module } from '../module_manager'
+import { transform_css_content } from './css'
+import { TransformResult } from '../transformer'
 
-
-export async function transform_scss(file: BunFile) {
-  const filepath = file.name!
-  const content = await file.text()
+export function transform_scss(url: URL): TransformResult {
+  const content = fs.readFileSync(url, 'utf-8')
   const result = sass.compileString(content, {
     sourceMap: true,
     sourceMapIncludeSources: true,
@@ -15,11 +14,11 @@ export async function transform_scss(file: BunFile) {
       {
         canonicalize(name) {
           console.log('sass:url', name)
-          const fullpath = path.join(path.dirname(filepath), name)
+          const fullpath = path.join(path.dirname(url.pathname), name)
           const modulepath = find_scss_file(fullpath)
           if(!modulepath) throw new Error('Not found')
-          const url =  Bun.pathToFileURL(modulepath)
-          return url
+          const modurl = Bun.pathToFileURL(modulepath)
+          return modurl
         },
         load(url) {
           return {
@@ -32,27 +31,27 @@ export async function transform_scss(file: BunFile) {
   })
 
   const sourcemap = result.sourceMap!
-  sourcemap.file = filepath
+  sourcemap.file = url.pathname
 
   const urls = result.loadedUrls.slice()
-  urls.unshift(Bun.pathToFileURL(filepath))
+  urls.unshift(url)
   sourcemap.sources = sourcemap.sources.map((_, index) => {
     return urls[index].toString()
   })
 
-  return { 
-    ...result, 
-    sourcemap,
+  const css = transform_css_content(Buffer.from(result.css), url)
+  return {
+    module: css.module,
+    deps: get_dependency_modules(result)
   }
 }
 
-export function update_module_map_for_scss(module_map: ModuleMap, module: ModuleFile, result: sass.CompileResult) {
+function get_dependency_modules(result: sass.CompileResult) {
   const deps: Set<ModuleFile> = new Set
   result.loadedUrls.forEach(url => {
-    module.dependencies.add(url.toString())
-    deps.add(create_module(url, Bun.file(url)))
+    deps.add(create_module(url, ModuleType.Style, '<null>'))
   })
-  update_module(module_map, module, deps)
+  return deps
 }
 
 /**

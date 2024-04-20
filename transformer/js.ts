@@ -1,47 +1,27 @@
+import * as fs from 'fs'
 import * as ts from 'typescript'
 import { typescript_transform_import_specifier } from '../parser/import'
 import { typescript_inject_hmr } from '../parser/hmr-injection'
 import transform_react_refresh from 'react-refresh-typescript'
-import { BunFile } from 'bun'
+import { TransformResult } from '../transformer'
+import { ModuleType, create_module } from '../module_manager'
 
 
-export async function transform_js_file(file: BunFile, base_url: string) {
-  const filename = file.name!
-  const content = await file.text()
 
-  const result = ts.transpileModule(content, {
-    fileName: filename,
-    compilerOptions: {
-      target: ts.ScriptTarget.ESNext,
-      module: ts.ModuleKind.ESNext,
-      jsx: ts.JsxEmit.ReactJSXDev,
-      jsxImportSource: '/[module]/react',
-      sourceMap: true,
-      inlineSourceMap: true,
-    },
-    transformers: {
-      before: [
-        typescript_transform_import_specifier(base_url),
-        transform_react_refresh(),
-        typescript_inject_hmr(),
-      ],
-      after: [
-        
-      ]
-    }
-  })
-
-  return result.outputText
+export function transform_js_file(url: URL, workdir: string): TransformResult {
+  const content = fs.readFileSync(url, 'utf-8')
+  return transform_js(content, workdir, url)
 }
 
-export function transform_js(content: string, root: string, filename: string) {
+export function transform_js(content: string, root: string, url: URL): TransformResult {
   const result = ts.transpileModule(content, {
-    fileName: filename,
+    fileName: url.pathname,
     compilerOptions: {
       target: ts.ScriptTarget.ESNext,
       module: ts.ModuleKind.ESNext,
       jsx: ts.JsxEmit.ReactJSXDev,
       jsxImportSource: '/[module]/react',
+      isolatedModules: true,
     },
     transformers: {
       before: [
@@ -59,5 +39,7 @@ export function transform_js(content: string, root: string, filename: string) {
     }
   })
 
-  return result.outputText
+  return {
+    module: create_module(url, ModuleType.Code, result.outputText, true)
+  }
 }

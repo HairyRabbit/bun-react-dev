@@ -1,40 +1,29 @@
+import * as fs from 'fs'
 import * as ts from 'typescript'
 import * as lightningcss from 'lightningcss'
 import { RawSourceMap } from 'source-map-js'
 import { make_inline_sourcemap } from '../sourcemap'
-import { BunFile } from 'bun'
+import { TransformResult } from '../transformer'
+import { ModuleType, create_module } from '../module_manager'
 
-export async function transform_css_file(file: BunFile) {
-  const code = await file.arrayBuffer()
-
-  const result = lightningcss.transform({
-    filename: file.toString(),
-    cssModules: true,
-    code: Buffer.from(code),
-    sourceMap: true,
-  })
-
-  const filepath = file.name!
-
-  return { 
-    ...result, 
-    sourcemap: override_sourcemap(result.map!, filepath),
-    css_exports: create_classnames_map(result.exports),
-  }
+export function transform_css_file(url: URL): TransformResult {
+  const content = fs.readFileSync(url)
+  return transform_css_content(content, url)
 }
 
-export function transform_css_content(content: string, filepath: string) {
+export function transform_css_content(content: Buffer, url: URL): TransformResult {
   const result = lightningcss.transform({
-    filename: filepath,
+    filename: url.pathname,
     cssModules: true,
-    code: Buffer.from(content),
+    code: content,
     sourceMap: true,
   })
 
-  return { 
-    ...result, 
-    sourcemap: override_sourcemap(result.map!, filepath),
-    css_exports: create_classnames_map(result.exports),
+  const exports = create_classnames_map(result.exports)
+  const sm = override_sourcemap(result.map!, url.pathname)
+  const js = generate_style_code(result.code.toString('utf-8'), exports, sm)
+  return {
+    module: create_module(url, ModuleType.Style, js, true)
   }
 }
 

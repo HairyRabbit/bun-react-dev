@@ -7,8 +7,14 @@ import { generate_boot_code } from './boot';
 import { write_file } from './file';
 import { BunFile } from 'bun';
 import { watch } from 'chokidar'
-import { ModuleFile, ModuleMap, get_replacement_modules } from './module_manager';
+import { ModuleFile, ModuleManager, ModuleType, create_module, create_module_manager, to_response } from './module_manager';
 import { create_transform_factory } from './transformer';
+import { transform_css_content } from './transformer/css';
+import { generate_global_style_code } from './global_style';
+import { generate_logo_code } from './logo';
+import { Config } from './config';
+import { pathToFileURL } from 'url';
+import { create_watcher } from './wacher';
 
 function serveFromDir(config: {
   directory: string;
@@ -30,170 +36,82 @@ function serveFromDir(config: {
   return null;
 }
 
-export type ServerOptions = {
-  path: {
-    public: string
-    module: string
-    output: string
-    root: string
-  }
-  entry?: string,
-  socket_path?: string,
-
-  html?: {},
-  boot?: {},
-  outdir?: string
-  srcdir?: string
-  cache?: boolean | string
+export type RequestHandler = {
+  filter: string | RegExp,
+  handler(filepath: string, workdir: string): Response | Promise<Response>,
 }
 
-const DEFAULT_OUTDIR = 'target'
-const DEFAULT_SRCDIR = 'src'
 
-export function create_server(project_path: string, options: ServerOptions) {
+export function create_server(project_path: string, config: Config) {
   if (!path.isAbsolute(project_path)) throw new Error('project_path should be a absolute path')
-  const source_dirpath = resolve_dirpath(options.srcdir, project_path, DEFAULT_SRCDIR)
-  const output_dirpath = resolve_dirpath(options.outdir, project_path, DEFAULT_OUTDIR)
 
-  const module_map: ModuleMap = new Map
+  const socket_topic = 'ws'
+  const mm = create_module_manager()
 
-  const cache: Map<string, BunFile> = new Map
-  const depmap: Map<string, string> = new Map
-  // fs.existsSync(output_dirpath) && sync_cache(cache, output_dirpath)
-
-  const watcher = watch(source_dirpath, { alwaysStat: true })
-  const transform = create_transform_factory(module_map, source_dirpath)
-
-  watcher.on('change', (filepath, stat) => {
-    console.log('file change:', filepath)
-    const url = Bun.pathToFileURL(filepath)
-    
-    const module_file = module_map.get(url.toString())
-    if(!module_file) return
-
-    console.log('file module:', module_file)
-
-    if(module_file.replacement) {
-      const relative_path = path.relative(source_dirpath, filepath)
-      const runtime_filepath = '/' + relative_path
-      server.publish('hmr', JSON.stringify({
-        type: 'update',
-        payload: {
-          url: runtime_filepath
-        }
-      }))
-    }
-    else {
-      const dependents = get_replacement_modules(module_map, module_file)
-      dependents.forEach(dependent_module => {
-        const relative_path = path.relative(source_dirpath, dependent_module.url.pathname)
-        const runtime_filepath = '/' + relative_path
-        server.publish('hmr', JSON.stringify({
-          type: 'update',
-          payload: {
-            url: runtime_filepath
-          }
-        }))
-      })
-    }
-
-
-
-    // const bubbled_path = module_map.get(url.toString()) ?? filepath
-    // const relative_path = path.relative(source_dirpath, bubbled_path)
-    // // const output_path = path.join(relative_path, relative_path)
-    // // cache.set(output_path, Bun.file(output_path))
-
-    // const runtime_filepath = '/' + relative_path
-    // server.publish('hmr', JSON.stringify({
-    //   type: 'update',
-    //   payload: {
-    //     url: runtime_filepath
-    //   }
-    // }))
-  }).on('add', (filepath, stat) => {
-    const relative_path = path.relative(source_dirpath, filepath)
-
-    if (stat && stat.size > 0) {
-      if (['index.html'].includes(relative_path)) {
-        const output_path = path.join(output_dirpath, relative_path)
-        cache.set(output_path, Bun.file(filepath))
-      }
-    }
-  }).on('unlink', (filepath) => {
-    const relative_path = path.relative(source_dirpath, filepath)
-
-    if (relative_path === 'index.html') {
-      const output_path = path.join(output_dirpath, relative_path)
-      cache.delete(output_path)
-    }
-
-    console.log(`File ${filepath} has been removed`)
-  })
-
-  const html_rewrite = new HTMLRewriter()
-  html_rewrite.on('head', {
-    element(el) {
-      const content = JSON.stringify({
-        server: {
-          development: server.development,
-          host: server.hostname,
-          port: server.port,
-        },
-        socket: {
-          endpoint: '__DEV__',
-        },
-        namespace: '__REACT_DEV__'
-      })
-      el.append(`<meta name="react-dev" content="${Buffer.from(content).toString('base64')}">`, { html: true })
-    }
-  })
+  const watcher = create_watcher(config.workdir)
+  const transform = create_transform_factory(mm, config.workdir)
 
   const server = Bun.serve({
     websocket: {
-      open: (ws) => {
-        console.log("Client connected");
-        // console.log(ws)
-        // ws.send('ok')
-        ws.subscribe('hmr')
-
-      },
-      message: (ws, message) => {
-        console.log("Client sent message", message);
-      },
-      close: (ws) => {
-        console.log("Client disconnected");
-        ws.unsubscribe('hmr')
-      },
+      open(ws) { ws.subscribe('hmr') },
+      close(ws) { ws.unsubscribe('hmr') },
+      message: (ws, message) => {},
     },
     async fetch(request, server) {
       const pathname = new URL(request.url).pathname
-      console.log(pathname)
 
       if (pathname === '/') {
-        const html_filepath = path.resolve(output_dirpath, 'index.html')
-        // const html = Bun.file(html_filepath)
-
-        let html = cache.get(html_filepath)
-        if (undefined === html) {
-          const content = render_html()
-          html = await write_file(Bun.file(html_filepath), content)
-        }
-
-        return new Response(html)
+        return serve_module(
+          '[html]', mm, () => {
+            const filepath = path.join(config.workdir, 'index.html')
+            const url = pathToFileURL(filepath)
+            const mod = create_module(url, ModuleType.HTML, render_html())
+            return mod
+          }
+        )
       }
 
-      if (pathname === '/boot.tsx') {
-        const boot_filepath = path.resolve(output_dirpath, 'boot.tsx')
-        let boot = cache.get(boot_filepath)
-        if (undefined === boot) {
-          const content = generate_boot_code()
-          const transformed = transform_js(content, source_dirpath, 'boot.tsx')
-          boot = await write_file(Bun.file(boot_filepath), transformed)
-        }
-
-        return new Response(boot)
+      else if (pathname === '/[boot]') {
+        return serve_module(
+          '[boot]', mm, () => {
+            const filepath = resolve_filepath('boot', config.workdir)
+            if(filepath) {
+              const url = pathToFileURL(filepath)
+              const content = fs.readFileSync(url, 'utf-8')
+              const mod = create_module(url, ModuleType.Code, content)
+              return mod
+            }
+            else {
+              const url = pathToFileURL('/[boot]')
+              const mod = create_module(url, ModuleType.Code, generate_boot_code(config.workdir))
+              return mod
+            }
+          }
+        )
       }
+
+      else if (pathname === '/[app]') {
+        return serve_module(
+          '[app]', mm, () => {
+            const filepath = import.meta.resolveSync('App', config.workdir)
+            const url = pathToFileURL(filepath)
+            const mod = create_module(url, ModuleType.Code, generate_boot_code(config.workdir))
+            return mod
+          }
+        )
+      }
+
+      // if (pathname === '/logo.svg') {
+      //   const filename = 'logo.svg'
+      //   const logo_filepath = path.resolve(output_dirpath, filename)
+      //   let logo = cache.get(logo_filepath)
+      //   if (undefined === logo) {
+      //     const content = generate_logo_code()
+      //     logo = await write_file(Bun.file(logo_filepath), content)
+      //   }
+
+      //   return new Response(logo)
+      // }
 
       if (pathname.endsWith('/__REACT_DEV__')) {
         if (server.upgrade(request)) {
@@ -205,39 +123,20 @@ export function create_server(project_path: string, options: ServerOptions) {
 
 
       const publicResponse = serveFromDir({
-        directory: options.path.public,
+        directory: config.public,
         path: pathname === '/' ? '/index.html' : pathname,
       })
 
-      if (publicResponse) {
-        if (pathname === '/') {
-          const resp = html_rewrite.transform(
-            new Response(`
-<!DOCTYPE html>
-<html>
-<!-- comment -->
-<head>
-  <title>My First HTML Page</title>
-</head>
-<body>
-  <h1>My First Heading</h1>
-  <p>My first paragraph.</p>
-</body>
-`)
-          )
-          console.log(await resp.text())
-        }
-        return publicResponse
-      }
+      if (publicResponse) return publicResponse
 
 
       if (pathname.startsWith('/[module]/')) {
         const module_name = pathname.replace(/^\/\[module\]\//, '')
-        return serve_module(module_name, options.path.module, options.path.root)
+        return serve_pkg(module_name, config.path.module, config.path.root)
       }
 
       const basename = pathname.replace(/^\//, '')
-      const filepath = path.join(source_dirpath, basename)
+      const filepath = path.join(config.workdir, basename)
       const url = new URL(filepath, 'file:')
       const is_exists = fs.existsSync(url.pathname)
       if (false === is_exists) return new Response(null, {
@@ -245,7 +144,7 @@ export function create_server(project_path: string, options: ServerOptions) {
       })
 
       const transformed = await transform(url)
-      const output_path = path.join(output_dirpath, basename)
+      const output_path = path.join(config.output_dirpath, basename)
       const output_file = await write_file(Bun.file(output_path), transformed)
       return new Response(output_file, {
         headers: {
@@ -256,12 +155,34 @@ export function create_server(project_path: string, options: ServerOptions) {
   })
 
   function destroy() {
-    console.log('server destroy...')
-    watcher.close()
     server.stop()
   }
 
-  return destroy
+  function publish(data: string) {
+    server.publish(socket_topic, data)
+  }
+
+  function create_handler(handlers: Set<RequestHandler>, final_handler: RequestHandler['handler'] | undefined) {
+    function setup_handler(filter: RequestHandler['filter'], handler: RequestHandler['handler']): void
+    function setup_handler(handler: RequestHandler['handler']): void
+    function setup_handler(...args: any) {
+      if(typeof args[0] === 'function') {
+        final_handler = args[0]
+      }
+      else {
+        handlers.add({ filter: args[0], handler: args[1] })
+      }
+    }
+
+    return setup_handler
+  }
+
+  return {
+    server,
+    publish,
+    destroy,
+    get
+  }
 
   // return {
   //   [Symbol.dispose]() {
@@ -272,12 +193,42 @@ export function create_server(project_path: string, options: ServerOptions) {
   // }
 }
 
-// process.on('SIGQUIT', () => {})
-
-async function serve_module(module_name: string, module_dir: string, root: string) {
+async function serve_pkg(module_name: string, module_dir: string, root: string) {
   const output = await bundle_module(module_name, module_dir, root)
   if(null === output) return new Response(null, { status: 404 })
   return new Response(Bun.file(output))
+}
+
+function serve_module(module_id: string, module_manager: ModuleManager, get_module: (module_manager: ModuleManager) => ModuleFile) {
+  let mod = module_manager.get_module(module_id)
+  if(!mod) {
+    mod = get_module(module_manager)
+    module_manager.update(mod)
+  }
+  return to_response(mod)
+}
+
+async function serve_controlled(filepath: string | null, module_manager: ModuleManager, get_content: () => string, module_type: ModuleType = ModuleType.Code) {
+  if(null === filepath) return new Response(null, { status: 404 })
+
+  const url = pathToFileURL(filepath)
+
+  let mod = module_manager.get_module_by_url(url)
+  if(mod) return to_response(mod)
+
+  const is_exists = fs.existsSync(url)
+  
+  let content: string
+  if(is_exists) {
+    content = fs.readFileSync(url, 'utf-8')
+  }
+  else {
+    content = get_content()
+  }
+
+  mod = create_module(url, module_type, content)
+  module_manager.update(mod)
+  return to_response(mod)
 }
 
 function resolve_dirpath(dirpath: string | undefined, project_path: string, default_path: string) {
@@ -296,4 +247,14 @@ function sync_cache(cache: Map<string, BunFile>, dirpath: string) {
 
     cache.set(target_path, Bun.file(target_path))
   })
+}
+
+const resolve = import.meta.resolveSync
+export function resolve_filepath(...args: Parameters<typeof resolve>) {
+  try {
+    return resolve(...args)
+  }
+  catch(err) {
+    return null
+  }
 }

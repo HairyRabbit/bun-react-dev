@@ -1,7 +1,7 @@
 import * as path from 'path'
 import { test } from 'bun:test'
 import * as lightningcss from 'lightningcss'
-import { transform_scss, update_module_map_for_scss } from '../transformer/scss'
+import { transform_scss, get_dependency_modules } from '../transformer/scss'
 
 test.only('transform css', async () => {
   const transformed = lightningcss.transform({
